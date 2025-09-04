@@ -10,7 +10,7 @@ from Storage.models import (
     AuditEvent, DailyEmailStats, EmailAttachment,
 )
 from datetime import datetime
-
+from typing import Optional, Dict, Any
 
 class DatabaseManager:
     def __init__(self, db_url=None):
@@ -26,16 +26,53 @@ class DatabaseManager:
         self.Session = sessionmaker(bind=self.engine)
         Base.metadata.create_all(self.engine)
 
+    def save_ai_draft(self, draft_dict: dict) -> int:
+        session = self.Session()
+        try:
+            draft = AIDraft(
+                message_id=draft_dict.get("message_id"),
+                thread_id=draft_dict.get("thread_id"),
+                model=draft_dict.get("model"),
+                prompt=draft_dict.get("prompt"),
+                draft_text=draft_dict.get("draft_text"), 
+                tone_tags=draft_dict.get("tone_tags"),
+                priority_hint=draft_dict.get("priority_hint"),
+                sentiment_hint=draft_dict.get("sentiment_hint"),
+                status=draft_dict.get("status", "pending"),
+                created_at=datetime.utcnow(),
+            )
+            session.add(draft)
+            session.commit()
+            return draft.id
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def update_ai_draft_status(
+        self, draft_id: int, status: str, edited_text: Optional[str] = None, draft_text: Optional[Dict[str, Any]] = None
+    ):
+        session = self.Session()
+        try:
+            draft = session.query(AIDraft).filter_by(id=draft_id).one_or_none()
+            if not draft:
+                raise ValueError(f"Draft {draft_id} not found")
+
+            draft.status = status
+            if edited_text:
+                draft.edited_text = edited_text
+            if draft_text:
+                draft.draft_text = draft_text
+
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
     def save_processed_message(self, msg_dict: dict) -> int:
-        """
-        Save a processed email into normalized schema:
-        - EmailThread
-        - EmailMessage
-        - EmailExtraction
-        - EmailInsight (classification + priority + sentiment)
-        - EmailAttachment
-        Returns EmailMessage.id
-        """
         session = self.Session()
         try:
             thread_key = (
@@ -80,7 +117,7 @@ class DatabaseManager:
                     received_at=msg_dict.get("date"),
                     flags=msg_dict.get("flags", []),
                     body_text=msg_dict.get("body", {}).get("body"),
-                    body_html=None,  # can be filled if HTML needed
+                    body_html=None,  
                     urls=msg_dict.get("body", {}).get("urls"),
                     attachments_meta=msg_dict.get("body", {}).get("attachments"),
                     is_agent_reply=msg_dict.get("is_agent_reply", False),
