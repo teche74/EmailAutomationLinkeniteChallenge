@@ -26,7 +26,8 @@ class BaseEmailFetcher:
         self.MAX_THREADS = 4
         self.model = text_classifier
         self.sentiment_analyzer = sentiment_analyzer
-        self.nlp = spacy.load("en_core_web_sm")
+        self.nlp = spacy.load("en_core_web_lg")
+        self.summarizer = pipeline("summarization" , model = "sshleifer/distilbart-cnn-12-6", tokenizer = AutoTokenizer.from_pretrained("sshleifer/distilbart-cnn-12-6"))
         self.db = DatabaseManager()
         self.FILTER_KEYWORDS = []
         self.ALLOWED_DOMAINS = []
@@ -227,10 +228,21 @@ class BaseEmailFetcher:
         for url in urls:
             body_text = body_text.replace(url, "")
 
+        processed_text = body_text.strip()
+        focused_summary = None
+        try:
+            if processed_text:
+                inputs = tokenizer.encode(processed_text, return_tensors="pt", truncation=True, max_length=1024)
+                summary = summarizer(tokenizer.decode(inputs[0], skip_special_tokens=True),
+                     max_length=120, min_length=30, do_sample=False)
+                focused_summary = summary[0]["summary_text"]
+        except Exception as e:
+            print(f"⚠️ Summarization failed: {e}")
+
         return {
-            "body": body_text.strip(),
-            "attachments": attachments,         # for raw use
-            "attachments_list": attachments_list,  # for DB persistence
+            "body": focused_summary or processed_text,
+            "attachments": attachments,         
+            "attachments_list": attachments_list,  
             "urls": urls,
         }
 
@@ -569,15 +581,4 @@ class OutlookFetcher(BaseEmailFetcher):
             return False
 
         return self.login_with_oauth(access_token, username)
-
-
-# if __name__ == "__main__":
-#     gmail_user = os.getenv("GMAIL_USER")
-#     gmail_pass = os.getenv("GMAIL_PASS")
-
-#     gmail_fetcher = GmailFetcher()
-#     if gmail_user and gmail_pass:
-#         gmail_fetcher.login(gmail_user, gmail_pass)
-#         print(gmail_fetcher.todayMails())
-#     else:
-#         print("Missing Gmail credentials in .env")
+ Gmail credentials in .env")
