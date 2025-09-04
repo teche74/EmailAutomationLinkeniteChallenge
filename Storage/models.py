@@ -110,7 +110,7 @@ class AIDraft(Base):
     thread_id = Column(BigInteger, ForeignKey('email_threads.id'))
     model = Column(String)
     prompt = Column(Text)
-    draft_text = Column(Text)
+    draft_text = Column(JSONB, nullable=True)
     tone_tags = Column(PG_ARRAY(String))
     priority_hint = Column(String)
     sentiment_hint = Column(String)
